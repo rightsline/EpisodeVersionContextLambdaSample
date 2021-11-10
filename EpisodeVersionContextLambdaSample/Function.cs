@@ -60,7 +60,7 @@ namespace EpisodeVersionContextLambdaSample
                             Console.WriteLine($"Catalog-Item message received.");
                             break;
                         case CharTypeID.Relationship:
-                            Console.WriteLine($"Right message received.");
+                            Console.WriteLine($"Relationship message received.");
                             break;
                     }
 
@@ -87,43 +87,23 @@ namespace EpisodeVersionContextLambdaSample
                     var messageEntity = JsonConvert.DeserializeObject<ModuleEntityMessage>(record.Sns.Message, Converter.Settings);
 
                     //SAMPLES
-                    //Get a catalog item - assuming it was the message received on the queue
-                    var catalogResult = await this._v4.Get("catalog-item", messageEntity.Entity.EntityId);
-
-                    //Search for the first 25 catalog items with the same template as the one received on the queue
-                    var catalogPayload = @"
-                        {""query"":
-                        {""$and"":[
-                        {""$eq"":[""templateid""," + messageEntity.Entity.Template.TemplateId + @"]}]},
-                        ""start"":0,""rows"":25,""sortOrders"":[""sequencenumber asc""]}";
-
-                    var catalogResults = await this._v4.Search("catalog-item", catalogPayload);
-
-                    if (catalogResults.Count() == 0)
-                    {
-                        Console.WriteLine($"Cannot find Catalog Items with template id {messageEntity.Entity.Template.TemplateId}.");
-                        Console.WriteLine("Lambda processing aborted");
-                    }
-
+                   
                     //
-                    //Example for fetching additional rights information for a right-update message
+                    //Example for fetching additional catalog information for a catalog-update message
                     //
                     if (charType == CharTypeID.CatalogItem && action == EntityBaseMessageActions.EntityActionUpdated)
                     {
-                        var rightResult = await this._v4.Get("catalog-item", messageEntity.Entity.EntityId);
+                        var catalogResult = await this._v4.Get("catalog-item", messageEntity.Entity.EntityId);
 
 
-                        //
-                        //example call to get 10 catalog items associated to a rightset when it is changed
-                        //
-                        var rightSearchPayload = @"{
+                        var catalogSearchPayload = @"{
                                 ""start"": 0,
                                 ""rows"": 10,
-                                ""childQuery"": { 3:{ ""$eq"":[""recordid"", " + messageEntity.Entity.EntityId + @"]} }
+                                ""parentQuery"": { 1:{ ""$eq"":[""recordid"", " + messageEntity.Entity.EntityId + @"]} }
                                 }
                                 ";
 
-                        var catalogRightResults = await this._v4.Search("catalog-item", rightSearchPayload);
+                        var catalogResults = await this._v4.Search("catalog-item", catalogSearchPayload);
                     }
 
 
