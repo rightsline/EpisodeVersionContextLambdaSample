@@ -86,9 +86,6 @@ namespace EpisodeVersionContextLambdaSample
 							break;
 					}
 
-					
-					//SAMPLES
-
 					//
 					//Example for fetching additional catalog information for a catalog-update message
 					//
@@ -96,13 +93,13 @@ namespace EpisodeVersionContextLambdaSample
 					{
 						var messageEntity = JsonConvert.DeserializeObject<ModuleEntityMessage>(record.Sns.Message, Converter.Settings);
 						var catalogResult = await _v4.Get("catalog-item", messageEntity.Entity.EntityId);
-						processCatalogUpdated(catalogResult);
+						ProcessCatalogUpdated(catalogResult);
 					}
 					else if( charType == CharTypeID.Relationship )
 					{
 						var messageRelationship = JsonConvert.DeserializeObject<RelationshipMessage>(record.Sns.Message, Converter.Settings);
 						var parent = await _v4.Get("catalog-item", messageRelationship.ParentEntity.EntityId);
-						processCatalogUpdated(parent);
+						ProcessCatalogUpdated(parent);
 					}
 
 				}
@@ -116,46 +113,61 @@ namespace EpisodeVersionContextLambdaSample
 			return new { body = "SNS Event Processing Completed at " + DateTime.Now.ToString(), statusCode = 200 };
 		}
 
-		private async void processCatalogUpdated(EntityRestModel catalog)
+		private async void ProcessCatalogUpdated(EntityRestModel catalog)
 		{
 			if(catalog.Template.TemplateId == Consts.Templates.Episode)
 			{
-				var season = await getParent(catalog.Id.Value);
-				var series = await getParent(season.Id.Value);
-				var versions = await getChildren(catalog.Id.Value);
+				var season = await GetParent(catalog.Id.Value);
+				var series = await GetParent(season.Id.Value);
+				var versions = await GetChildren(catalog.Id.Value);
 				foreach(var version in versions) // could be made to use the bulk endpoints
 				{
 					var v = await this._v4.Get("catalog-item", version.Id.Value);
+
+					// TODO: add conditional here to check if new values are different than current values.  if values are the same, no update needed.
 					v.Characteristics[Consts.Characteristics.ParentEpisode] = new List<CharDataRestModel>() { new CharDataRestModel() { Value = catalog.Title } };
 					v.Characteristics[Consts.Characteristics.ParentSeason] = new List<CharDataRestModel>() { new CharDataRestModel() { Value = season.Title } };
 					v.Characteristics[Consts.Characteristics.ParentSeries] = new List<CharDataRestModel>() { new CharDataRestModel() { Value = series.Title } };
-					var respsonse = await this._v4.Put("catalog-item", v.Id.Value, JsonConvert.SerializeObject(v));
+					
+					var response = await this._v4.Put("catalog-item", v.Id.Value, JsonConvert.SerializeObject(v));
 				}
 			}
 			else if(catalog.Template.TemplateId == Consts.Templates.Season ||
 				catalog.Template.TemplateId == Consts.Templates.Series)
 			{
-				var children = await getChildren(catalog.Id.Value);
+				var children = await GetChildren(catalog.Id.Value);
 				foreach(var item in children)
 				{
-					processCatalogUpdated(item);//ideally this would be a separate lambda execution
+					ProcessCatalogUpdated(item);//ideally this would be a separate lambda execution
 				}
 			}
 		}
 
-		private async Task<IEnumerable<EntityRestModel>> getChildren(int entityId)
+		private async Task<IEnumerable<EntityRestModel>> GetChildren(int entityId)
 		{
-			var catalogSearchPayload = @"{
-                                ""start"": 0,
+			List<EntityRestModel> results = new List<EntityRestModel>();
+			int start = 0, numFound;
+            
+			do
+			{
+				var catalogSearchPayload = @"{
+                                ""start"": " + start + @",
                                 ""rows"": 100,
                                 ""parentQuery"": { 1:{ ""$eq"":[""recordid"", " + entityId + @"]} }
-                                }
-                                ";
+                                }";
 
-			return await this._v4.Search("catalog-item", catalogSearchPayload);
+				var response = await this._v4.Search("catalog-item", catalogSearchPayload);
+
+				results.AddRange(response.Entities);
+				numFound = response.NumFound;
+				start += 100;
+			}
+			while (start < numFound);
+
+			return results;
 		}
 
-		private async Task<EntityRestModel> getParent(int entityId)
+		private async Task<EntityRestModel> GetParent(int entityId)
 		{
 			var catalogSearchPayload = @"{
                                 ""start"": 0,
@@ -164,8 +176,8 @@ namespace EpisodeVersionContextLambdaSample
                                 }
                                 ";
 
-			var parent = await this._v4.Search("catalog-item", catalogSearchPayload);
-			return parent.First(); //assumes catalog items have a single parent
+			var response = await this._v4.Search("catalog-item", catalogSearchPayload);
+			return response.Entities.First(); //assumes catalog items have a single parent
 		}
 	}
 }

@@ -67,15 +67,11 @@ namespace EpisodeVersionContextLambdaSample.RightslineAPI
             }
         }
 
-        public async Task<IEnumerable<EntityRestModel>> Search(string endpoint, string query)
+        public async Task<EntitySearchResponse> Search(string endpoint, string query)
         {
             try
             {
-                var response = await this.GatewayApiClient.Request<EntitySearchResponse>($"{endpoint}/search", HttpMethod.Post, query);
-
-                var numFound = response.NumFound;
-
-                return response.Entities;
+                return await this.GatewayApiClient.Request<EntitySearchResponse>($"{endpoint}/search", HttpMethod.Post, query);
             }
             catch (Exception ex)
             {
